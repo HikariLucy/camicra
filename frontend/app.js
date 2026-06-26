@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://127.0.0.1:8088/api';
+const API_BASE_URL = '/api';
 
 // --- Fetch Interceptor para JWT ---
 const originalFetch = window.fetch;
