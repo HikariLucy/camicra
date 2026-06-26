@@ -745,13 +745,20 @@ def migrar_csv(current_user: str = Depends(get_current_user), db: Session = Depe
     return {"mensaje": "Migración finalizada", "detalles": resultados}
 
 # --- Montar Frontend ---
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+
 # Esto sirve el archivo index.html cuando visitas la raíz de la web
 @app.get("/")
 def read_root():
-    ruta_index = os.path.join("frontend", "index.html")
+    ruta_index = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(ruta_index):
         return FileResponse(ruta_index)
-    return {"mensaje": "Frontend no encontrado. Asegúrate de que la carpeta 'frontend' existe."}
+    return {"mensaje": f"Frontend no encontrado en {FRONTEND_DIR}. Asegúrate de que la carpeta 'frontend' fue subida a GitHub."}
 
 # Esto monta la carpeta completa para servir app.js, css, imágenes, etc.
-app.mount("/", StaticFiles(directory="frontend"), name="frontend")
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+else:
+    print(f"ADVERTENCIA: La carpeta {FRONTEND_DIR} no existe.")
