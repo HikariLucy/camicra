@@ -18,7 +18,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta
 
 # SQLAlchemy Imports
+# pyrefly: ignore [missing-import]
 from sqlalchemy import create_engine, Column, Integer, String, Text, LargeBinary
+# pyrefly: ignore [missing-import]
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 # Cargar variables de entorno desde el archivo .env
@@ -432,6 +434,7 @@ def crear_prestamo(prestamo: PrestamoCreate, current_user: str = Depends(get_cur
 @app.get("/api/prestamos/activos")
 def get_prestamos_activos(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
     # Reemplazo de LEFT JOIN: Obtener préstamos y estantería manual o usando la sesión (forma más limpia en ORM)
+    # pyrefly: ignore [missing-import]
     from sqlalchemy.orm import aliased
     
     # Esta consulta usa join para replicar la lógica anterior
