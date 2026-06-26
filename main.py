@@ -12,6 +12,7 @@ import pandas as pd
 import requests
 import google.generativeai as genai
 from dotenv import load_dotenv
+import json
 from collections import Counter
 import jwt
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -484,6 +485,42 @@ def devolver_prestamo(prestamo_id: int, current_user: str = Depends(get_current_
     
     return {"mensaje": "Préstamo marcado como devuelto"}
 
+# --- Historial de Alumno ---
+@app.get("/api/alumnos/{nombre_alumno}/historial")
+def get_historial_alumno(nombre_alumno: str, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Traer todos los préstamos del alumno
+    prestamos = db.query(PrestamoDB, InventarioDB.tematicas)\
+        .outerjoin(InventarioDB, (PrestamoDB.nombre_item == InventarioDB.titulo) & (PrestamoDB.tipo_item == 'Libro'))\
+        .filter(PrestamoDB.nombre_alumno == nombre_alumno)\
+        .order_by(PrestamoDB.fecha_prestamo.desc())\
+        .all()
+    
+    lista_prestamos = []
+    todas_tematicas = []
+    
+    for p, tematicas in prestamos:
+        lista_prestamos.append({
+            "id": p.id,
+            "tipo_item": p.tipo_item,
+            "nombre_item": p.nombre_item,
+            "fecha_prestamo": p.fecha_prestamo,
+            "fecha_devolucion": p.fecha_devolucion,
+            "estado": p.estado
+        })
+        if tematicas:
+            # Dividir temáticas separadas por coma
+            temas = [t.strip() for t in tematicas.split(",") if t.strip()]
+            todas_tematicas.extend(temas)
+            
+    # Contar temáticas
+    contador_tematicas = dict(Counter(todas_tematicas))
+    
+    return {
+        "alumno": nombre_alumno,
+        "prestamos": lista_prestamos,
+        "tematicas": contador_tematicas
+    }
+
 # --- Endpoint Estadísticas ---
 @app.get("/api/estadisticas")
 def get_estadisticas(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -593,7 +630,65 @@ def generar_evento_ia(req: GenerarEventoRequest, current_user: str = Depends(get
         respuesta = modelo.generate_content(prompt_evento)
         return {"respuesta": respuesta.text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al generar evento: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al planificar evento: {str(e)}")
+
+# --- Recomendación Diaria IA ---
+@app.get("/api/recomendacion-diaria")
+def get_recomendacion_diaria(db: Session = Depends(get_db)):
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="API Key de Gemini no configurada en las variables de entorno.")
+        
+    # Obtener todos los libros
+    libros = db.query(InventarioDB.titulo, InventarioDB.autor).all()
+    if not libros:
+        return {"titulo": "N/A", "autor": "N/A", "mensaje": "El catálogo está vacío."}
+        
+    # Contar préstamos por libro
+    prestamos = db.query(PrestamoDB.nombre_item).filter(PrestamoDB.tipo_item == 'Libro').all()
+    contador_prestamos = Counter([p.nombre_item for p in prestamos])
+    
+    # Ordenar libros por cantidad de préstamos (ascendente)
+    libros_con_conteo = [(l.titulo, l.autor, contador_prestamos.get(l.titulo, 0)) for l in libros]
+    libros_con_conteo.sort(key=lambda x: x[2])
+    
+    # Tomar los 10 menos prestados
+    menos_prestados = libros_con_conteo[:10]
+    
+    lista_libros_str = ", ".join([f"'{l[0]}' de {l[1]}" for l in menos_prestados])
+    
+    # Fecha formateada
+    meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    hoy = datetime.now()
+    hoy_str = f"{hoy.day} de {meses[hoy.month - 1]} de {hoy.year}"
+    
+    prompt = f"""
+    Hoy es {hoy_str}. Sugiere un libro del catálogo adjunto para recomendar en el CRA.
+    El objetivo es fomentar la lectura de títulos poco conocidos y conectarlos con la efeméride actual si existe, o dar una motivación atractiva para los niños y adolescentes.
+    
+    Catálogo de libros menos leídos: {lista_libros_str}
+    
+    Devuelve estrictamente un objeto JSON válido con la siguiente estructura (sin bloques de código markdown ni comillas triples):
+    {{
+      "titulo": "Título del libro",
+      "autor": "Autor del libro",
+      "mensaje": "Mensaje motivacional (2-3 oraciones breves)..."
+    }}
+    """
+    
+    try:
+        modelo = genai.GenerativeModel("gemini-2.5-flash")
+        respuesta = modelo.generate_content(prompt)
+        texto = respuesta.text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(texto)
+        return data
+    except Exception as e:
+        print("Error de IA:", str(e))
+        # Fallback de emergencia
+        return {
+            "titulo": menos_prestados[0][0], 
+            "autor": menos_prestados[0][1], 
+            "mensaje": "¡Te invitamos a descubrir esta joya oculta de nuestra biblioteca hoy mismo!"
+        }
 
 @app.post("/api/migrar-csv")
 def migrar_csv(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
