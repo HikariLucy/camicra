@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cami CRA - Asistente de Biblioteca</title>
+    
+    <!-- Configuración PWA -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#1e3a8a">
+    <link rel="apple-touch-icon" href="./app_icon.png">
+
+    <!-- Tailwind CSS (vía CDN) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Proteger la página
+        if (!localStorage.getItem('jwt_token')) {
+            window.location.href = 'login.html';
+        }
+
+        function cerrarSesion() {
+            localStorage.removeItem('jwt_token');
+            window.location.href = 'login.html';
+        }
+
+        // Registrar Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('SW registrado con éxito:', registration.scope);
+                })
+                .catch(error => {
+                    console.log('Error al registrar SW:', error);
+                });
+            });
+        }
+    </script>
+    <!-- FullCalendar -->
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Marked.js para renderizar Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- jsPDF para exportar a PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .tab-content.block {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        /* Estilos base para el HTML renderizado por Marked.js (el diploma) */
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+            color: #1e3a8a; /* blue-900 */
+            font-weight: 700;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .markdown-body p {
+            margin-bottom: 1rem;
+            color: #374151; /* gray-700 */
+            line-height: 1.6;
+        }
+        .markdown-body ul {
+            list-style-type: disc;
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .markdown-body ol {
+            list-style-type: decimal;
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .markdown-body blockquote {
+            border-left: 4px solid #1e3a8a; /* blue-900 */
+            padding-left: 1rem;
+            font-style: italic;
+            color: #4b5563; /* gray-600 */
+            margin: 1.5rem 0;
+            background-color: #f3f4f6; /* gray-100 */
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+        }
+        .markdown-body strong {
+            font-weight: 600;
+            color: #111827; /* gray-900 */
+        }
+        /* Loader spinner */
+        .loader {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #1e3a8a;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Navegación: Estilo institucional serio pero moderno (Azul Marino) -->
+    <header class="bg-blue-900 text-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row justify-between h-auto sm:h-16 items-center py-4 sm:py-0">
+                <div class="flex items-center gap-4 mb-4 sm:mb-0">
+                    <div class="flex items-center gap-3 text-xl font-bold">
+                        <img src="app_icon.png" alt="Logo CRA" class="h-10 w-auto rounded-md shadow-sm border border-blue-800 bg-white p-1">
+                        <span class="tracking-wide">Cami CRA</span>
+                    </div>
+                    <!-- Icono de Alerta / Ampolleta y Pop-up -->
+                    <div class="relative">
+                        <button id="btn-alertas" class="relative text-gray-300 hover:text-yellow-400 transition focus:outline-none" title="Notificaciones de Préstamos">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                            </svg>
+                            <span id="indicador-alerta" class="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500 hidden"></span>
+                        </button>
+
+                        <!-- Pop-up Notificaciones -->
+                        <div id="popup-alertas" class="hidden absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-md shadow-lg border border-gray-200 z-50">
+                            <div class="p-3 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-md">
+                                <h3 class="text-sm font-bold text-gray-700">Préstamos Atrasados</h3>
+                                <button onclick="document.querySelector('[data-target=tab-prestamos]').click(); document.getElementById('popup-alertas').classList.add('hidden');" class="text-xs text-blue-600 hover:text-blue-800">Ver todos</button>
+                            </div>
+                            <div id="lista-alertas" class="max-h-60 overflow-y-auto p-2">
+                                <!-- JS inyecta alertas aquí -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <nav>
+                    <ul class="flex space-x-1 sm:space-x-2 flex-wrap justify-center" id="nav-tabs">
+                        <li>
+                            <button data-target="tab-inventario" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium bg-blue-800 text-white transition hover:bg-blue-700">Inventario</button>
+                        </li>
+                        <li>
+                            <button data-target="tab-eventos" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium text-blue-100 hover:bg-blue-800 transition">Calendario</button>
+                        </li>
+                        <li>
+                            <button data-target="tab-materiales" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium text-blue-100 hover:bg-blue-800 transition">Materiales</button>
+                        </li>
+                        <li>
+                            <button data-target="tab-prestamos" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium text-blue-100 hover:bg-blue-800 transition">Préstamos</button>
+                        </li>
+                        <li>
+                            <button data-target="tab-estadisticas" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium text-blue-100 hover:bg-blue-800 transition">Estadísticas</button>
+                        </li>
+                        <li>
+                            <button data-target="tab-ia" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium text-blue-100 hover:bg-blue-800 transition">✨ IA</button>
+                        </li>
+                        <li>
+                            <button data-target="tab-evento-ia" class="nav-btn px-4 py-2 rounded-md text-sm sm:text-base font-medium text-blue-100 hover:bg-blue-800 transition">💡 Crear Evento</button>
+                        </li>
+                        <li>
+                            <button onclick="cerrarSesion()" class="px-4 py-2 rounded-md text-sm sm:text-base font-medium text-red-100 hover:bg-red-600 border border-red-500 transition">Cerrar Sesión</button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        
+        <!-- Sección: Inventario -->
+        <section id="tab-inventario" class="tab-content block">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 class="text-2xl font-bold text-blue-900 mb-2">📦 Inventario de Libros</h2>
+                <p class="text-gray-500 mb-6">Listado completo de libros disponibles en nuestra biblioteca escolar.</p>
+                
+                <!-- Formulario Agregar Libro y Archivo de Importación -->
+                <div class="bg-gray-50 p-6 rounded-lg border border-gray-100 mb-8">
+                    <div class="flex flex-col lg:flex-row gap-8">
+                        <!-- Añadir Manualmente -->
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold text-blue-900 mb-4">Añadir Nuevo Libro</h3>
+                            <form id="form-inventario">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label for="isbn" class="block text-sm font-medium text-gray-700 mb-1">ISBN (Opcional - Autocompleta)</label>
+                                        <input type="text" id="isbn" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. 9780439708180">
+                                    </div>
+                                    <div>
+                                        <label for="titulo" class="block text-sm font-medium text-gray-700 mb-1">Título *</label>
+                                        <input type="text" id="titulo" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                                    </div>
+                                    <div>
+                                        <label for="autor" class="block text-sm font-medium text-gray-700 mb-1">Autor *</label>
+                                        <input type="text" id="autor" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                                    </div>
+                                    <div>
+                                        <label for="nivelLibro" class="block text-sm font-medium text-gray-700 mb-1">Nivel Recomendado *</label>
+                                        <select id="nivelLibro" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                                            <option value="" disabled selected>Selecciona un nivel...</option>
+                                            <option value="Prekinder y Kinder NTP">Prekinder y Kinder NTP</option>
+                                            <option value="PRIMER CICLO">PRIMER CICLO</option>
+                                            <option value="SEGUNDO CICLO">SEGUNDO CICLO</option>
+                                            <option value="TERCER CICLO">TERCER CICLO</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="estanteriaLibro" class="block text-sm font-medium text-gray-700 mb-1">Estantería</label>
+                                        <input type="text" id="estanteriaLibro" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. Estantería A1" required>
+                                    </div>
+                                    <div class="md:col-span-2">
+                                        <label for="tematicas" class="block text-sm font-medium text-gray-700 mb-1">Temáticas *</label>
+                                        <input type="text" id="tematicas" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. Ciencia, Naturaleza" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full sm:w-auto px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-900 transition">
+                                    Guardar Libro
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <!-- Línea Divisoria -->
+                        <div class="hidden lg:block w-px bg-gray-200"></div>
+                        <div class="lg:hidden h-px w-full bg-gray-200 my-2"></div>
+
+                        <!-- Importar Masivamente -->
+                        <div class="w-full lg:w-1/3">
+                            <h3 class="text-lg font-semibold text-blue-900 mb-4">Importar Múltiples</h3>
+                            <form id="form-importar">
+                                <label for="fileImport" class="block text-sm font-medium text-gray-700 mb-1">Subir Archivo (.csv o .xlsx)</label>
+                                <input type="file" id="fileImport" name="file" accept=".csv, .xlsx, .xls" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white mb-4 transition" required>
+                                
+                                <button type="submit" class="w-full px-6 py-2.5 bg-green-600 text-white font-medium rounded-md shadow hover:bg-green-700 transition flex justify-center">
+                                    Importar Inventario
+                                </button>
+                                <p id="import-loader" class="hidden text-sm text-green-700 font-medium mt-3 text-center">⏳ Importando libros...</p>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden" id="tabla-inventario">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">ID</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">Portada</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">Título</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">Autor</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">Nivel</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">Temáticas</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">Estantería</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <!-- Los datos se insertan con JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sección: Eventos -->
+        <section id="tab-eventos" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-blue-900 mb-2">📅 Calendario de Eventos</h2>
+                        <p class="text-gray-500">Registro de actividades de fomento lector y eventos oficiales.</p>
+                    </div>
+                </div>
+                
+                <!-- Formulario Nuevo Evento Manual -->
+                <form id="form-nuevo-evento" class="bg-gray-50 p-6 rounded-lg border border-gray-100 mb-8">
+                    <h3 class="text-lg font-semibold text-blue-900 mb-4">Añadir Evento Manualmente</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label for="tituloEventoManual" class="block text-sm font-medium text-gray-700 mb-1">Título del Evento *</label>
+                            <input type="text" id="tituloEventoManual" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
+                        </div>
+                        <div>
+                            <label for="fechaEventoManual" class="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
+                            <input type="date" id="fechaEventoManual" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
+                        </div>
+                        <div>
+                            <label for="descEventoManual" class="block text-sm font-medium text-gray-700 mb-1">Objetivo / Descripción</label>
+                            <input type="text" id="descEventoManual" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                    <button type="submit" class="px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 transition">
+                        Crear Evento en Calendario
+                    </button>
+                </form>
+
+                <div id="calendar" class="mt-4 relative z-0"></div>
+
+                <!-- Popover/Modal de Detalles del Evento -->
+                <div id="evento-modal" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white w-80 sm:w-96 rounded-lg shadow-2xl border border-gray-200 p-5">
+                    <div class="flex justify-between items-start mb-3">
+                        <h3 id="evento-modal-title" class="text-lg font-bold text-blue-900 leading-tight">Título del Evento</h3>
+                        <button id="evento-modal-close" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    <div class="text-sm text-gray-700 mb-5">
+                        <p id="evento-modal-date" class="font-medium mb-2 text-gray-500"></p>
+                        <p id="evento-modal-desc"></p>
+                    </div>
+                    <div class="flex justify-end">
+                        <button id="evento-modal-delete" class="px-4 py-2 bg-red-100 text-red-700 text-sm font-semibold rounded-md shadow-sm hover:bg-red-200 transition hidden">
+                            Eliminar Evento
+                        </button>
+                    </div>
+                </div>
+                <!-- Overlay oculto para el modal -->
+                <div id="evento-modal-overlay" class="hidden absolute inset-0 bg-gray-900 bg-opacity-20 z-40 rounded-lg"></div>
+            </div>
+        </section>
+
+        <!-- Sección: Recomendaciones IA -->
+        <section id="tab-ia" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-2xl font-bold text-blue-900 mb-2">✨ Asistente de Inteligencia Artificial</h2>
+                <p class="text-gray-600 mb-6">
+                    Genera recomendaciones personalizadas y un diploma de reconocimiento para el alumno basado en sus gustos de lectura.
+                </p>
+                
+                <form id="form-ia" class="max-w-2xl bg-gray-50 p-6 rounded-lg border border-gray-100">
+                    <div class="mb-4">
+                        <label for="nombreAlumno" class="block text-sm font-medium text-gray-700 mb-1">Nombre del Alumno</label>
+                        <input type="text" id="nombreAlumno" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. Dante" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="librosFavoritos" class="block text-sm font-medium text-gray-700 mb-1">Libros Favoritos/Intereses (separados por coma)</label>
+                        <input type="text" id="librosFavoritos" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. El Principito, Harry Potter" required>
+                    </div>
+                    <button type="submit" class="w-full sm:w-auto px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-900 transition flex justify-center">
+                        Generar Recomendación IA
+
+                    </button>
+                </form>
+            </div>
+
+            <!-- Estado de Carga -->
+            <div id="ia-loader" class="hidden flex-col items-center justify-center p-12 bg-white rounded-lg shadow-sm border border-gray-200">
+                <div class="loader mb-4"></div>
+                <p class="text-blue-900 font-medium">Generando magia...</p>
+            </div>
+
+            <!-- Contenedor del Diploma / Resultado IA -->
+            <div id="ia-result" class="hidden bg-white shadow-md rounded-lg border-t-4 border-blue-900 p-8 markdown-body transition-all">
+                <!-- Aquí se inyecta el HTML generado desde el Markdown -->
+            </div>
+        </section>
+
+        <!-- Sección: Eventos IA -->
+        <section id="tab-evento-ia" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-2xl font-bold text-blue-900 mb-2">💡 Planificador de Eventos con IA</h2>
+                <p class="text-gray-600 mb-6">
+                    Genera ideas y planificación para eventos del CRA basándote en el inventario actual.
+                </p>
+                
+                <form id="form-evento-ia" class="max-w-2xl bg-gray-50 p-6 rounded-lg border border-gray-100">
+                    <div class="mb-4">
+                        <label for="tipoActividad" class="block text-sm font-medium text-gray-700 mb-1">Tipo de Actividad</label>
+                        <input type="text" id="tipoActividad" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. Ciclo de Cine, Feria de Ciencias" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="objetivoEvento" class="block text-sm font-medium text-gray-700 mb-1">Objetivo del Evento</label>
+                        <input type="text" id="objetivoEvento" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Ej. Incentivar la lectura en alumnos de 1° a 4° básico" required>
+                    </div>
+                    <button type="submit" class="w-full sm:w-auto px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-900 transition flex justify-center">
+                        Generar Plan de Evento
+                    </button>
+                </form>
+            </div>
+
+            <!-- Estado de Carga -->
+            <div id="evento-ia-loader" class="hidden flex-col items-center justify-center p-12 bg-white rounded-lg shadow-sm border border-gray-200">
+                <div class="loader mb-4"></div>
+                <p class="text-blue-900 font-medium">Planificando el evento perfecto...</p>
+            </div>
+
+            <!-- Contenedor del Resultado IA -->
+            <div id="evento-ia-result" class="hidden bg-white shadow-md rounded-lg border-t-4 border-blue-900 p-8 markdown-body transition-all">
+                <!-- Aquí se inyecta el HTML generado desde el Markdown -->
+            </div>
+        </section>
+
+        <!-- Sección: Material Pedagógico -->
+        <section id="tab-materiales" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-2xl font-bold text-blue-900 mb-2">🧩 Material Pedagógico</h2>
+                <p class="text-gray-500 mb-6">Registro visual de material de apoyo y juegos educativos.</p>
+
+                <!-- Formulario Material -->
+                <form id="form-material" class="bg-gray-50 p-6 rounded-lg border border-gray-100 mb-8">
+                    <h3 class="text-lg font-semibold text-blue-900 mb-4">Añadir Nuevo Material</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="nombreMaterial" class="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                            <input type="text" id="nombreMaterial" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                        </div>
+                        <div>
+                            <label for="fotoMaterial" class="block text-sm font-medium text-gray-700 mb-1">Evidencia Visual (Foto)</label>
+                            <input type="file" id="fotoMaterial" accept="image/*" capture="environment" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white transition">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="descMaterial" class="block text-sm font-medium text-gray-700 mb-1">Descripción *</label>
+                            <textarea id="descMaterial" rows="2" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required></textarea>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full sm:w-auto px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 transition">
+                        Guardar Material
+                    </button>
+                </form>
+
+                <!-- Cuadrícula (Grid) de Materiales -->
+                <div id="grid-materiales" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    <!-- Cards inyectadas por JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Sección: Préstamos -->
+        <section id="tab-prestamos" class="tab-content hidden">
+            <!-- Panel de Notificaciones -->
+            <div id="panel-notificaciones" class="mb-6 space-y-3">
+                <!-- Alertas inyectadas por JS -->
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-2xl font-bold text-blue-900 mb-6">🔄 Sistema de Préstamos</h2>
+                
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <!-- Formulario Nuevo Préstamo -->
+                    <div class="w-full lg:w-1/3">
+                        <form id="form-prestamo" class="bg-gray-50 p-6 rounded-lg border border-gray-100">
+                            <h3 class="text-lg font-semibold text-blue-900 mb-4">Nuevo Préstamo</h3>
+                            
+                            <div class="mb-4">
+                                <label for="tipoItem" class="block text-sm font-medium text-gray-700 mb-1">Tipo de Ítem *</label>
+                                <select id="tipoItem" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                                    <option value="Libro">Libro</option>
+                                    <option value="Material">Material Pedagógico</option>
+                                </select>
+                            </div>
+                            <div class="mb-4">
+                                <label for="nombreItemPrestamo" class="block text-sm font-medium text-gray-700 mb-1">Nombre del Ítem *</label>
+                                <input type="text" id="nombreItemPrestamo" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="nombreAlumno" class="block text-sm font-medium text-gray-700 mb-1">Nombre del Alumno/Docente *</label>
+                                <input type="text" id="nombreAlumno" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="cursoAlumno" class="block text-sm font-medium text-gray-700 mb-1">Curso *</label>
+                                <select id="cursoAlumno" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                                    <option value="" disabled selected>Selecciona curso...</option>
+                                    <option value="1">1</option><option value="2">2</option><option value="3 A">3 A</option><option value="3 B">3 B</option><option value="4 A">4 A</option><option value="4 B">4 B</option><option value="5 A">5 A</option><option value="5 B">5 B</option><option value="6 A">6 A</option><option value="6 B">6 B</option><option value="7 A">7 A</option><option value="7 B">7 B</option><option value="8 A">8 A</option><option value="8 B">8 B</option><option value="I A">I A</option><option value="I B">I B</option><option value="II A">II A</option><option value="II B">II B</option><option value="III A">III A</option><option value="III B">III B</option><option value="IV A">IV A</option><option value="IV B">IV B</option>
+                                </select>
+                            </div>
+                            <div class="mb-6">
+                                <label for="fechaDevolucion" class="block text-sm font-medium text-gray-700 mb-1">Fecha de Devolución *</label>
+                                <input type="date" id="fechaDevolucion" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition" required>
+                            </div>
+                            
+                            <button type="submit" class="w-full px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 transition">
+                                Registrar Préstamo
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Tabla de Préstamos Activos -->
+                    <div class="w-full lg:w-2/3">
+                        <h3 class="text-lg font-semibold text-blue-900 mb-4">Préstamos Activos</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ítem</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estantería</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Alumno</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Curso</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Préstamo</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200" id="tbody-prestamos">
+                                    <!-- Filas inyectadas por JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sección: Estadísticas -->
+        <section id="tab-estadisticas" class="tab-content hidden">
+            <h2 class="text-2xl font-bold text-blue-900 mb-6">📊 Dashboard de Estadísticas</h2>
+            
+            <!-- Tarjetas de Resumen (Grid) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-blue-50 border border-blue-100 rounded-lg p-6 shadow-sm flex items-center">
+                    <div class="text-4xl mr-4">📚</div>
+                    <div>
+                        <p class="text-sm text-blue-800 font-semibold uppercase tracking-wider">Total Libros</p>
+                        <p id="stat-libros" class="text-3xl font-bold text-blue-900">0</p>
+                    </div>
+                </div>
+                <div class="bg-purple-50 border border-purple-100 rounded-lg p-6 shadow-sm flex items-center">
+                    <div class="text-4xl mr-4">🧩</div>
+                    <div>
+                        <p class="text-sm text-purple-800 font-semibold uppercase tracking-wider">Material Pedagógico</p>
+                        <p id="stat-materiales" class="text-3xl font-bold text-purple-900">0</p>
+                    </div>
+                </div>
+                <div class="bg-green-50 border border-green-100 rounded-lg p-6 shadow-sm flex items-center">
+                    <div class="text-4xl mr-4">🔄</div>
+                    <div>
+                        <p class="text-sm text-green-800 font-semibold uppercase tracking-wider">Préstamos Activos</p>
+                        <p id="stat-prestamos" class="text-3xl font-bold text-green-900">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recomendación Diaria IA -->
+            <div class="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-lg p-6 shadow-sm mb-8 flex flex-col md:flex-row items-center gap-6 relative overflow-hidden">
+                <div class="absolute -right-4 -top-8 text-9xl opacity-10 pointer-events-none">🤖</div>
+                <div class="flex-shrink-0 text-5xl">
+                    ✨
+                </div>
+                <div class="flex-grow z-10">
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-2">
+                        <h3 class="text-xl font-bold text-indigo-900">Recomendación del Día</h3>
+                        <button id="btn-refrescar-recomendacion" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex items-center gap-1 bg-white px-3 py-1.5 rounded-md shadow-sm transition border border-indigo-100 hover:border-indigo-300">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Refrescar Sugerencia
+                        </button>
+                    </div>
+                    <div id="recomendacion-loader" class="text-indigo-700 italic flex items-center gap-2">
+                        <div class="loader-sm w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div> 
+                        <span>Consultando a la IA sobre libros infrautilizados...</span>
+                    </div>
+                    <div id="recomendacion-contenido" class="hidden">
+                        <p class="font-bold text-lg text-gray-800 mb-1" id="rec-titulo"></p>
+                        <p class="text-sm text-indigo-600 font-semibold mb-3">por <span id="rec-autor"></span></p>
+                        <p class="text-gray-700 italic border-l-4 border-indigo-400 pl-4 py-1" id="rec-mensaje"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gráficos -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">Top 5 Temáticas Populares</h3>
+                    <div class="relative h-64">
+                        <canvas id="chartTematicas"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">Distribución por Niveles</h3>
+                    <div class="relative h-64">
+                        <canvas id="chartNiveles"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Modal Carnet de Lector (Oculto por defecto) -->
+        <div id="modal-carnet-lector" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-gray-900 bg-opacity-50 backdrop-blur-sm p-4">
+            <div class="bg-white rounded-lg shadow-2xl w-full max-w-4xl flex flex-col md:flex-row overflow-hidden relative max-h-[90vh]">
+                <!-- Botón Cerrar -->
+                <button id="btn-cerrar-carnet" class="absolute top-4 right-4 text-gray-500 hover:text-red-500 z-10 transition focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+                
+                <!-- Panel Izquierdo: Info Alumno y Gráfico -->
+                <div class="w-full md:w-1/3 bg-blue-50 p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-blue-100 overflow-y-auto">
+                    <div class="w-24 h-24 bg-blue-200 rounded-full flex items-center justify-center text-4xl text-blue-800 mb-4 shadow-sm border-4 border-white">
+                        👨‍🎓
+                    </div>
+                    <h3 id="carnet-nombre" class="text-xl font-bold text-blue-900 text-center mb-1">Nombre Alumno</h3>
+                    <p class="text-sm text-blue-700 font-medium mb-6 uppercase tracking-wide">Lector Destacado</p>
+                    
+                    <div class="w-full mb-4">
+                        <h4 class="text-sm font-semibold text-blue-900 text-center mb-2">Géneros Favoritos</h4>
+                        <div class="relative w-full h-48 flex justify-center">
+                            <canvas id="chartCarnet"></canvas>
+                        </div>
+                    </div>
+                    
+                    <button id="btn-pdf-historial" class="w-full mt-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded transition flex items-center justify-center gap-2 shadow-sm">
+                        <span>📄</span> Generar PDF
+                    </button>
+                </div>
+                
+                <!-- Panel Derecho: Historial de Préstamos -->
+                <div class="w-full md:w-2/3 p-6 flex flex-col overflow-hidden">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <span>📚</span> Historial de Lectura
+                    </h3>
+                    
+                    <div class="overflow-y-auto flex-1 pr-2 space-y-3" id="lista-historial">
+                        <!-- Items de historial inyectados por JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="./app.js"></script>
+</body>
+</html>

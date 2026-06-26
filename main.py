@@ -110,6 +110,25 @@ class PrestamoDB(Base):
 def startup_event():
     # Crea las tablas si no existen
     Base.metadata.create_all(bind=engine)
+    
+    # Crear eventos demo si la tabla está vacía
+    db = SessionLocal()
+    try:
+        if db.query(EventoDB).count() == 0:
+            hoy = datetime.now()
+            eventos_demo = [
+                EventoDB(nombre_evento="Ciclo de Cine Infantil", fecha=(hoy + timedelta(days=2)).strftime("%Y-%m-%d"), objetivo="Fomentar la imaginación mediante películas basadas en libros."),
+                EventoDB(nombre_evento="Reunión de CRA", fecha=(hoy + timedelta(days=5)).strftime("%Y-%m-%d"), objetivo="Planificación mensual de actividades."),
+                EventoDB(nombre_evento="Taller de Ajedrez", fecha=(hoy + timedelta(days=7)).strftime("%Y-%m-%d"), objetivo="Desarrollo del pensamiento lógico."),
+                EventoDB(nombre_evento="Día del Libro", fecha=(hoy + timedelta(days=14)).strftime("%Y-%m-%d"), objetivo="Celebración masiva en el patio del colegio."),
+                EventoDB(nombre_evento="Feria de Ciencias CRA", fecha=(hoy + timedelta(days=20)).strftime("%Y-%m-%d"), objetivo="Exposición de experimentos guiada por libros del CRA.")
+            ]
+            db.add_all(eventos_demo)
+            db.commit()
+    except Exception as e:
+        print(f"Error inicializando datos demo: {e}")
+    finally:
+        db.close()
 
 
 # --- Modelos Pydantic ---
@@ -634,6 +653,21 @@ def generar_evento_ia(req: GenerarEventoRequest, current_user: str = Depends(get
         raise HTTPException(status_code=500, detail=f"Error al planificar evento: {str(e)}")
 
 # --- Endpoints Calendario (Eventos y Feriados) ---
+@app.post("/api/eventos")
+def crear_evento(evento: EventoCreate, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    nuevo_evento = EventoDB(
+        nombre_evento=evento.nombre_evento,
+        fecha=evento.fecha,
+        objetivo=evento.objetivo,
+        libros_seleccionados=evento.libros_seleccionados,
+        materiales=evento.materiales,
+        resultados=evento.resultados
+    )
+    db.add(nuevo_evento)
+    db.commit()
+    db.refresh(nuevo_evento)
+    return nuevo_evento
+
 @app.get("/api/eventos")
 def get_eventos(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
     eventos = db.query(EventoDB).all()
