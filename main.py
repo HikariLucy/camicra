@@ -13,6 +13,7 @@ import requests
 import google.generativeai as genai
 from dotenv import load_dotenv
 import json
+import holidays
 from collections import Counter
 import jwt
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -631,6 +632,44 @@ def generar_evento_ia(req: GenerarEventoRequest, current_user: str = Depends(get
         return {"respuesta": respuesta.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al planificar evento: {str(e)}")
+
+# --- Endpoints Calendario (Eventos y Feriados) ---
+@app.get("/api/eventos")
+def get_eventos(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    eventos = db.query(EventoDB).all()
+    return [{"id": e.id, "nombre_evento": e.nombre_evento, "fecha": e.fecha, "objetivo": e.objetivo} for e in eventos]
+
+@app.delete("/api/eventos/{evento_id}")
+def delete_evento(evento_id: int, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    evento = db.query(EventoDB).filter(EventoDB.id == evento_id).first()
+    if not evento:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    db.delete(evento)
+    db.commit()
+    return {"mensaje": "Evento eliminado"}
+
+@app.get("/api/feriados")
+def get_feriados(current_user: str = Depends(get_current_user)):
+    try:
+        # Obtener año actual
+        year = datetime.now().year
+        # Obtener feriados de Chile usando la librería holidays
+        cl_holidays = holidays.country_holidays('CL', years=year)
+        
+        # Formatear para FullCalendar
+        feriados_list = []
+        for date_obj, name in cl_holidays.items():
+            feriados_list.append({
+                "id": f"feriado_{date_obj}",
+                "title": name,
+                "start": date_obj.strftime("%Y-%m-%d"),
+                "color": "#ef4444", # Rojo para destacar feriados
+                "isHoliday": True,
+                "display": "background" # Opcional: mostrar como fondo
+            })
+        return feriados_list
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Recomendación Diaria IA ---
 @app.get("/api/recomendacion-diaria")
