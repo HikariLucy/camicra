@@ -8,3 +8,5 @@ gunicorn
 holidays
 pandas
 openpyxl
+PyJWT
+python-multipart
