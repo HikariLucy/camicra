@@ -664,8 +664,9 @@ def get_feriados(current_user: str = Depends(get_current_user)):
                 "title": name,
                 "start": date_obj.strftime("%Y-%m-%d"),
                 "color": "#ef4444", # Rojo para destacar feriados
+                "textColor": "#ffffff", # Texto blanco asegurado
                 "isHoliday": True,
-                "display": "background" # Opcional: mostrar como fondo
+                "allDay": True
             })
         return feriados_list
     except Exception as e:
