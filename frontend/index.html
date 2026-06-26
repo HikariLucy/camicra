@@ -270,8 +270,12 @@
         <!-- Sección: Eventos -->
         <section id="tab-eventos" class="tab-content hidden">
             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative">
-                <h2 class="text-2xl font-bold text-blue-900 mb-2">📅 Calendario de Eventos</h2>
-                <p class="text-gray-500 mb-6">Registro de actividades de fomento lector y eventos oficiales.</p>
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-blue-900 mb-2">📅 Calendario de Eventos</h2>
+                        <p class="text-gray-500">Registro de actividades de fomento lector y eventos oficiales.</p>
+                    </div>
+                </div>
                 
                 <div id="calendar" class="mt-4 relative z-0"></div>
 
@@ -334,8 +338,34 @@
             </div>
         </section>
 
-        <!-- Sección: Eventos IA -->
+        <!-- Sección: Eventos IA y Manuales -->
         <section id="tab-evento-ia" class="tab-content hidden">
+            <!-- Bloque Manual -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-2xl font-bold text-blue-900 mb-2">📅 Crear Evento Manualmente</h2>
+                <p class="text-gray-600 mb-6">Añade directamente un evento al calendario del CRA.</p>
+                <form id="form-nuevo-evento" class="bg-gray-50 p-6 rounded-lg border border-gray-100">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label for="tituloEventoManual" class="block text-sm font-medium text-gray-700 mb-1">Título del Evento *</label>
+                            <input type="text" id="tituloEventoManual" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
+                        </div>
+                        <div>
+                            <label for="fechaEventoManual" class="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
+                            <input type="date" id="fechaEventoManual" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
+                        </div>
+                        <div>
+                            <label for="descEventoManual" class="block text-sm font-medium text-gray-700 mb-1">Objetivo / Descripción</label>
+                            <input type="text" id="descEventoManual" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                    <button type="submit" class="px-6 py-2.5 bg-blue-900 text-white font-medium rounded-md shadow hover:bg-blue-800 transition">
+                        Añadir al Calendario
+                    </button>
+                </form>
+            </div>
+
+            <!-- Bloque Inteligencia Artificial -->
             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
                 <h2 class="text-2xl font-bold text-blue-900 mb-2">💡 Planificador de Eventos con IA</h2>
                 <p class="text-gray-600 mb-6">
